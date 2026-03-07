@@ -98,6 +98,8 @@ FROM fetch_vllm_${REMOTE_VLLM} AS fetch_vllm
 # vLLM build stages
 FROM fetch_vllm AS build_vllm
 # Build vLLM (setup.py auto-detects sccache in PATH)
+# set setuptools-scm version, because setuptools-scm is unable to detect it in a git submodule
+ENV SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0+src.build_pq-dev"
 RUN cd vllm \
     && python3 -m pip install -r requirements/rocm.txt \
     && python3 setup.py clean --all  \
