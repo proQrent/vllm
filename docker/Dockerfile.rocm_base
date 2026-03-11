@@ -7,8 +7,9 @@ ARG PYTORCH_VISION_BRANCH="release/0.26"
 ARG PYTORCH_VISION_REPO="https://github.com/pytorch/vision.git"
 ARG PYTORCH_AUDIO_BRANCH="release/2.11"
 ARG PYTORCH_AUDIO_REPO="https://github.com/pytorch/audio.git"
-ARG FA_BRANCH="v2.8.3"
-ARG FA_REPO="https://github.com/Dao-AILab/flash-attention.git"
+# let's try the rocm tridao branch, and check if it works for gfx1151
+ARG FA_BRANCH="9a25eba"
+ARG FA_REPO="https://github.com/ROCm/flash-attention.git"
 ARG AITER_BRANCH="v0.1.11"
 ARG AITER_REPO="https://github.com/ROCm/aiter.git"
 ARG MORI_BRANCH="921b087"
@@ -21,6 +22,9 @@ ARG SCCACHE_ENDPOINT
 ARG SCCACHE_BUCKET_NAME=vllm-build-sccache
 ARG SCCACHE_REGION_NAME=us-west-2
 ARG SCCACHE_S3_NO_CREDENTIALS=0
+
+ARG FLASH_ATTENTION_TRITON_AMD_ENABLE
+ARG FLASH_ATTENTION_MAX_JOBS
 
 FROM ${BASE_IMAGE} AS base
 
@@ -205,6 +209,8 @@ FROM base AS build_fa
 ARG FA_BRANCH
 ARG FA_REPO
 ARG USE_SCCACHE
+ARG FLASH_ATTENTION_TRITON_AMD_ENABLE
+ARG FLASH_ATTENTION_MAX_JOBS
 RUN --mount=type=bind,from=build_pytorch,src=/app/install/,target=/install \
     pip install /install/*.whl
 RUN git clone ${FA_REPO}
@@ -215,7 +221,7 @@ RUN cd flash-attention \
            export HIP_CLANG_PATH=/opt/sccache-wrappers \
            && sccache --show-stats; \
        fi \
-    && GPU_ARCHS=$(echo ${PYTORCH_ROCM_ARCH} | sed -e 's/;gfx1[0-9]\{3\}//g') python3 setup.py bdist_wheel --dist-dir=dist \
+    && GPU_ARCHS=$(echo ${PYTORCH_ROCM_ARCH} | sed -e 's/;gfx1[0-9]\{3\}//g') FLASH_ATTENTION_TRITON_AMD_ENABLE=${FLASH_ATTENTION_TRITON_AMD_ENABLE} MAX_JOBS=${FLASH_ATTENTION_MAX_JOBS} python3 setup.py bdist_wheel --dist-dir=dist \
     && if [ "$USE_SCCACHE" = "1" ]; then sccache --show-stats; fi
 RUN mkdir -p /app/install && cp /app/flash-attention/dist/*.whl /app/install
 
