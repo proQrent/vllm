@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=rocm/dev-ubuntu-22.04:7.2-complete
+ARG BASE_IMAGE=rocm/dev-ubuntu-24.04:7.2-complete
 ARG TRITON_BRANCH="57c693b6"
 ARG TRITON_REPO="https://github.com/ROCm/triton.git"
 ARG PYTORCH_BRANCH="release/2.11"
@@ -39,7 +39,8 @@ ENV MORI_GPU_ARCHS=gfx942;gfx950
 # Required for RCCL in ROCm7.1
 ENV HSA_NO_SCRATCH_RECLAIM=1
 
-ARG PYTHON_VERSION=3.12
+# TODO: check, this should be in the generated versions.json file probably ?
+ARG PYTHON_VERSION=3.13
 ENV PYTHON_VERSION=${PYTHON_VERSION}
 
 RUN mkdir -p /app
@@ -55,14 +56,9 @@ RUN apt-get update -y \
     done \
     && apt-get update -y \
     && apt-get install -y python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv \
-       python${PYTHON_VERSION}-lib2to3 python-is-python3  \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 1 \
-    && update-alternatives --set python3 /usr/bin/python${PYTHON_VERSION} \
-    && ln -sf /usr/bin/python${PYTHON_VERSION}-config /usr/bin/python3-config \
-    && curl -sS https://bootstrap.pypa.io/get-pip.py | python${PYTHON_VERSION} \
     && python3 --version && python3 -m pip --version
 
-RUN pip install -U packaging 'cmake<4' ninja wheel 'setuptools<80' pybind11 Cython
+RUN pip install --break-system-packages -U packaging 'cmake<4' ninja 'setuptools<80' pybind11 Cython
 RUN apt-get update && apt-get install -y libjpeg-dev libsox-dev libsox-fmt-all sox && rm -rf /var/lib/apt/lists/*
 
 # Install sccache if USE_SCCACHE is enabled (for release builds)
@@ -121,7 +117,7 @@ RUN cd triton \
     && if [ ! -f setup.py ]; then cd python; fi \
     && python3 setup.py bdist_wheel --dist-dir=dist \
     && mkdir -p /app/install && cp dist/*.whl /app/install
-RUN if [ -d triton/python/triton_kernels ]; then pip install build && cd triton/python/triton_kernels \
+RUN if [ -d triton/python/triton_kernels ]; then pip install --break-system-packages build && cd triton/python/triton_kernels \
     && python3 -m build --wheel && cp dist/*.whl /app/install; fi
 
 
@@ -148,7 +144,7 @@ ARG USE_SCCACHE
 
 RUN git clone ${PYTORCH_REPO} pytorch
 RUN cd pytorch && git checkout ${PYTORCH_BRANCH} \
-    && pip install -r requirements.txt && git submodule update --init --recursive \
+    && pip install  --break-system-packages -r requirements.txt && git submodule update --init --recursive \
     && python3 tools/amd_build/build_amd.py \
     && if [ "$USE_SCCACHE" = "1" ]; then \
            export HIP_CLANG_PATH=/opt/sccache-wrappers \
@@ -158,7 +154,7 @@ RUN cd pytorch && git checkout ${PYTORCH_BRANCH} \
        fi \
     && CMAKE_PREFIX_PATH=$(python3 -c 'import sys; print(sys.prefix)') python3 setup.py bdist_wheel --dist-dir=dist \
     && if [ "$USE_SCCACHE" = "1" ]; then sccache --show-stats; fi \
-    && pip install dist/*.whl
+    && pip install --break-system-packages dist/*.whl
 RUN git clone ${PYTORCH_VISION_REPO} vision
 RUN cd vision && git checkout ${PYTORCH_VISION_BRANCH} \
     && if [ "$USE_SCCACHE" = "1" ]; then \
@@ -168,11 +164,11 @@ RUN cd vision && git checkout ${PYTORCH_VISION_BRANCH} \
        fi \
     && python3 setup.py bdist_wheel --dist-dir=dist \
     && if [ "$USE_SCCACHE" = "1" ]; then sccache --show-stats; fi \
-    && pip install dist/*.whl
+    && pip install --break-system-packages dist/*.whl
 RUN git clone ${PYTORCH_AUDIO_REPO} audio
 RUN cd audio && git checkout ${PYTORCH_AUDIO_BRANCH} \
     && git submodule update --init --recursive \
-    && pip install -r requirements.txt \
+    && pip install --break-system-packages -r requirements.txt \
     && if [ "$USE_SCCACHE" = "1" ]; then \
            export HIP_CLANG_PATH=/opt/sccache-wrappers \
            && export CMAKE_C_COMPILER_LAUNCHER=sccache \
@@ -180,7 +176,7 @@ RUN cd audio && git checkout ${PYTORCH_AUDIO_BRANCH} \
        fi \
     && python3 setup.py bdist_wheel --dist-dir=dist \
     && if [ "$USE_SCCACHE" = "1" ]; then sccache --show-stats; fi \
-    && pip install dist/*.whl
+    && pip install --break-system-packages dist/*.whl
 RUN mkdir -p /app/install && cp /app/pytorch/dist/*.whl /app/install \
     && cp /app/vision/dist/*.whl /app/install \
     && cp /app/audio/dist/*.whl /app/install
@@ -193,7 +189,7 @@ FROM base AS build_mori
 ARG MORI_BRANCH
 ARG MORI_REPO
 RUN --mount=type=bind,from=build_pytorch,src=/app/install/,target=/install \
-    pip install /install/*.whl
+    pip install --break-system-packages /install/*.whl
 RUN git clone ${MORI_REPO}
 RUN cd mori \
     && git checkout ${MORI_BRANCH} \
@@ -212,7 +208,7 @@ ARG USE_SCCACHE
 ARG FLASH_ATTENTION_TRITON_AMD_ENABLE
 ARG FLASH_ATTENTION_MAX_JOBS
 RUN --mount=type=bind,from=build_pytorch,src=/app/install/,target=/install \
-    pip install /install/*.whl
+    pip install --break-system-packages /install/*.whl
 RUN git clone ${FA_REPO}
 RUN cd flash-attention \
     && git checkout ${FA_BRANCH} \
@@ -234,13 +230,13 @@ ARG AITER_BRANCH
 ARG AITER_REPO
 ARG USE_SCCACHE
 RUN --mount=type=bind,from=build_pytorch,src=/app/install/,target=/install \
-    pip install /install/*.whl
+    pip install --break-system-packages /install/*.whl
 RUN git clone --recursive ${AITER_REPO}
 RUN cd aiter \
     && git checkout ${AITER_BRANCH} \
     && git submodule update --init --recursive \
-    && pip install -r requirements.txt
-RUN pip install pyyaml && cd aiter \
+    && pip install --break-system-packages -r requirements.txt
+RUN pip install --break-system-packages pyyaml && cd aiter \
     && if [ "$USE_SCCACHE" = "1" ]; then \
            export HIP_CLANG_PATH=/opt/sccache-wrappers \
            && sccache --show-stats; \
@@ -288,7 +284,7 @@ RUN --mount=type=bind,from=build_mori,src=/app/install/,target=/install \
 
 FROM base AS final
 RUN --mount=type=bind,from=debs,src=/app/debs,target=/install \
-    pip install /install/*.whl
+    pip install --break-system-packages /install/*.whl
 
 ARG BASE_IMAGE
 ARG TRITON_BRANCH
